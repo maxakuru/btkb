@@ -47,7 +47,7 @@ A convenience script is installed with the setup script, but really it just push
 This fifo is then read, line by line, by the FifoClient, converted into HID bytestrings and sent to the connected device.
 The fifo is owned by root by default, so the script should be run with `sudo`.
 
-Sample commands:
+#### Sample commands
 Press down "enter":
 ```sh
 sudo btkb KEY_ENTER
@@ -72,4 +72,5 @@ Note: this works the same as the `KEY_HOMESCREEN` event on Firestick (and maybe 
 
 #### Credits
 Not sure who this is, but [very helpful!](http://yetanotherpointlesstechblog.blogspot.com/2016/04/emulating-bluetooth-keyboard-with.html)
+
 [AnesBenmerzoug/BluetoothHID](https://github.com/AnesBenmerzoug/Bluetooth_HID)
