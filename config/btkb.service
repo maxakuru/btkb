@@ -1,0 +1,13 @@
+# Service file: /usr/lib/systemd/system/btkb.service
+[Unit]
+Documentation=nope sorry
+Description=Bluetooth keyboard emulator and FIFO client
+Wants=bluetooth.service
+After=bluetooth.service dbus.service
+
+[Service]
+Type=notify
+ExecStart=sudo /usr/sbin/btkbd
+
+[Install]
+WantedBy=multi-user.target

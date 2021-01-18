@@ -1,0 +1,20 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+         "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+        <node name="/org/max/btkb">
+          <interface name="org.max.btkb">
+            <method name="send_keys">
+              <arg name="modifier_byte" type="y" direction="in"/>
+              <arg name="keys" type="ay" direction="in"/>
+              <arg name="release" type="b" direction="in"/>
+            </method>
+          </interface>
+          <interface name="org.max.btkb">
+            <method name="release_keys">
+            </method>
+          </interface>
+          <interface name="org.max.btkb">
+            <method name="send_bytes">
+              <arg name="b" type="ay" direction="in"/>
+            </method>
+          </interface>
+       </node>
