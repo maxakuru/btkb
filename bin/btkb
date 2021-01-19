@@ -1,2 +1,4 @@
 #!/bin/bash
-echo "${@: 1}" >> /home/pi/btkb/btkb.fifo
+if [ -p /tmp/btkb.fifo ]; then
+    echo "${@: 1}" >> /tmp/btkb.fifo
+fi

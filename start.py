@@ -12,10 +12,10 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 
-def start_server():
+def start_server(queue):
     try:
         DBusGMainLoop(set_as_default=True)
-        BTKbService()
+        BTKbService(queue)
         Gtk.main()
     finally:
         return
@@ -28,12 +28,12 @@ if __name__ == "__main__":
     # TODO: parse args to get auto_release
     auto_release = True
 
-    server = multiprocessing.Process(target=start_server)
+    queue = multiprocessing.Queue()
+
+    server = multiprocessing.Process(target=start_server, args=(queue,))
     server.start()
 
-    sleep(1)
-
-    fifo = multiprocessing.Process(target=FifoClient)
+    fifo = multiprocessing.Process(target=FifoClient, args=(queue, auto_release))
     fifo.start()
 
     def shutdown(sig_num, frame):

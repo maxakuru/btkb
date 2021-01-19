@@ -42,17 +42,17 @@ class BTKbBluezProfile(dbus.service.Object):
     # see: https://dbus.freedesktop.org/doc/dbus-python/tutorial.html#data-types
     @dbus.service.method("org.bluez.Profile1", in_signature="", out_signature="")
     def Release(self):
-        print("Release")
+        print("[BTKB:Bluez] Release")
         mainloop.quit()
 
     @dbus.service.method("org.bluez.Profile1", in_signature="", out_signature="")
     def Cancel(self):
-        print("Cancel")
+        print("[BTKB:Bluez] Cancel")
 
     @dbus.service.method("org.bluez.Profile1", in_signature="oha{sv}", out_signature="")
     def NewConnection(self, path, fd, properties):
         self.fd = fd.take()
-        print("NewConnection(%s, %d)" % (path, self.fd))
+        print("[BTKB:Bluez] NewConnection(%s, %d)" % (path, self.fd))
         for key in properties.keys():
             if key == "Version" or key == "Features":
                 print("  %s = 0x%04x" % (key, properties[key]))
@@ -61,7 +61,7 @@ class BTKbBluezProfile(dbus.service.Object):
 
     @dbus.service.method("org.bluez.Profile1", in_signature="o", out_signature="")
     def RequestDisconnection(self, path):
-        print("RequestDisconnection(%s)" % (path))
+        print("[BTKB:Bluez] RequestDisconnection(%s)" % (path))
         if (self.fd > 0):
             os.close(self.fd)
             self.fd = -1
@@ -72,10 +72,10 @@ class BTKbBluezProfile(dbus.service.Object):
 # advertise an SDP record using our bluez profile class.
 #
 class BTKbDevice():
-    self.DEVICE_NAME = G_DEVICE_NAME
-    self.DEVICE_MAC = G_DEVICE_MAC
+    DEVICE_NAME = G_DEVICE_NAME
+    DEVICE_MAC = G_DEVICE_MAC
 
-    if self.DEVICE_MAC == 'CHANGE_ME':
+    if DEVICE_MAC == 'CHANGE_ME':
         raise Exception("Mac address not configured! See /usr/lib/btkb/server/btkb_server.py")
 
     # Service port, control - must match port configured in SDP record
@@ -85,12 +85,13 @@ class BTKbDevice():
     P_INTR = 19   
 
     PROFILE_DBUS_PATH = "/bluez/max/btkb_profile" # dbus path of the bluez profile we will create
-    SDP_RECORD_PATH = sys.path[0] + "/sdp_record.xml" # file path of the sdp record to laod
+    #SDP_RECORD_PATH = sys.path[0] + "/sdp_record.xml" # file path of the sdp record to laod
+    SDP_RECORD_PATH = os.path.dirname(os.path.abspath(__file__)) + '/sdp_record.xml'
     UUID = "00001124-0000-1000-8000-00805f9b34fb"
              
  
     def __init__(self):
-        print("Setting up BT device")
+        print("[BTKB] Setting up BT device")
 
         self.init_bt_device()
         self.init_bluez_profile()
@@ -98,12 +99,12 @@ class BTKbDevice():
 
     # Configure the bluetooth hardware device
     def init_bt_device(self):
-        print("Configuring for name " + self.DEVICE_NAME)
+        print("[BTKB] Configuring for name " + BTKbDevice.DEVICE_NAME)
 
         # Set the device class to a keybord and set the name
         # Device class 0x002540 is a HID keyboard
         os.system("hciconfig hcio class 0x002540")
-        os.system("hciconfig hcio name " + self.DEVICE_NAME)
+        os.system("hciconfig hcio name " + BTKbDevice.DEVICE_NAME)
 
         # Make the device discoverable
         os.system("hciconfig hcio piscan")
@@ -111,7 +112,7 @@ class BTKbDevice():
 
     # Set up a bluez profile to advertise device capabilities from a loaded service record.
     def init_bluez_profile(self):
-        print("Configuring Bluez Profile")
+        print("[BTKB] Configuring Bluez Profile")
 
         #setup profile options
         service_record = self.read_sdp_service_record()
@@ -129,12 +130,12 @@ class BTKbDevice():
         profile = BTKbBluezProfile(bus, BTKbDevice.PROFILE_DBUS_PATH)
         manager.RegisterProfile(BTKbDevice.PROFILE_DBUS_PATH, BTKbDevice.UUID, opts)
 
-        print("Profile registered")
+        print("[BTKB] Profile registered")
 
 
     # Read and return an sdp record from a file
     def read_sdp_service_record(self):
-        print("Reading service record")
+        print("[BTKB] Reading service record from path: ", BTKbDevice.SDP_RECORD_PATH)
 
         try:
             fh = open(BTKbDevice.SDP_RECORD_PATH, "r")
@@ -149,24 +150,31 @@ class BTKbDevice():
     # Ideally this would be handled by the Bluez 5 profile,
     # but that didn't seem to work.
     def listen(self):
-        print("Waiting for connections")
+        print("[BTKB] Waiting for connections")
 
         self.scontrol = BluetoothSocket(L2CAP)
         self.sinterrupt = BluetoothSocket(L2CAP)
 
         # Bind these sockets to a port - port zero to select next available
-        self.scontrol.bind((self.DEVICE_MAC, self.P_CTRL))
-        self.sinterrupt.bind((self.DEVICE_MAC, self.P_INTR))
+        self.scontrol.bind((BTKbDevice.DEVICE_MAC, BTKbDevice.P_CTRL))
+        self.sinterrupt.bind((BTKbDevice.DEVICE_MAC, BTKbDevice.P_INTR))
 
         # Start listening on the server sockets
         self.scontrol.listen(1) # Limit of 1 connection
         self.sinterrupt.listen(1)
 
-        self.ccontrol,cinfo = self.scontrol.accept()
-        print ("Got a connection on the control channel from " + cinfo[0])
+        self.ccontrol, cinfo = self.scontrol.accept()
+        print ("[BTKB] Got a connection on the control channel from " + cinfo[0])
 
         self.cinterrupt, cinfo = self.sinterrupt.accept()
-        print ("Got a connection on the interrupt channel from " + cinfo[0])
+        print ("[BTKB] Got a connection on the interrupt channel from " + cinfo[0])
+
+    def reconnect(self):
+        self.ccontrol, cinfo = self.scontrol.accept()
+        print ("[BTKB] Reconnected to control channel " + cinfo[0])
+
+        self.cinterrupt, cinfo = self.sinterrupt.accept()
+        print ("[BTKB] Reconnected to interrupt channel " + cinfo[0])
 
     def close(self):
         self.scontrol.close()
@@ -182,12 +190,13 @@ class BTKbDevice():
 class  BTKbService(dbus.service.Object):
 
     def __init__(self, queue = None):
-        print("Setting up service")
+        print("[BTKB] Setting up service")
         self.queue = queue
 
         # Det up as a dbus service
         bus_name = dbus.service.BusName("org.max.btkb", bus=dbus.SystemBus())
         dbus.service.Object.__init__(self, bus_name, "/org/max/btkb")
+        self.update_state("DISCONNECTED")
 
         # Create and setup our device
         self.device = BTKbDevice()
@@ -195,26 +204,29 @@ class  BTKbService(dbus.service.Object):
         # Start listening for connections
         self.device.listen()
 
-        # Mark state as active
-        self.update_state("ACTIVE")
+        # Mark state as active after connection received
+        self.update_state("CONNECTED")
 
     # Let client know that the state of the service has changed
     def update_state(self, state):
+        #print("[BTKB] update_state(): ", state)
         if self.queue is not None:
             self.queue.put({
-                topic: 'update_state',
-                value: state
-            })
+                'topic': 'update_state',
+                'value': state
+            }, False)
+        
 
     # Handle exceptions, sometimes by restarting the listening process
     def handle_error(self, err):
         # connection reset by peer or transport error
         if "104" in err.message or "107" in err.message:
-            print("closing and listening again...")
-            self.update_state("PENDING")
-            self.device.close()
-            self.device.listen()
-            self.update_state("ACTIVE")
+            print("[BTKB] Closing and listening again...")
+            self.update_state("DISCONNECTED")
+            self.device.reconnect()
+            #self.device.close()
+            #self.device.listen()
+            self.update_state("CONNECTED")
         else:
             self.update_state('SHUTDOWN')
             raise err
@@ -222,7 +234,7 @@ class  BTKbService(dbus.service.Object):
     @dbus.service.method('org.freedesktop.DBus.Introspectable', out_signature='s')
     def Introspect(self):
         intro_path = os.path.dirname(os.path.abspath(__file__)) + '/org.max.btkb.introspection'
-        print("Introspecting from file: ", intro_path)
+        print("[BTKB] Introspecting from file: ", intro_path)
         return ET.tostring(ET.parse(intro_path).getroot(), encoding='utf8', method='xml')
 
     # Send a string, probably a string of bytes
@@ -277,7 +289,7 @@ class  BTKbService(dbus.service.Object):
 if __name__ == "__main__":
     # Can only run as root
     if not os.geteuid() == 0:
-        sys.exit("Only root can run this script")
+        sys.exit("[BTKB] Only root can run this script")
 
     DBusGMainLoop(set_as_default=True)
     service = BTKbService()
@@ -287,4 +299,3 @@ if __name__ == "__main__":
             pass
     except KeyboardInterrupt:
         service.close()
-        return
