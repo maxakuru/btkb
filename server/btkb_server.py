@@ -20,18 +20,7 @@ from bluetooth import *
 from dbus.mainloop.glib import DBusGMainLoop
 import xml.etree.ElementTree as ET
 
-# ~~~~~~~ These must be configured for your device ~~~~~~~~
-# To find the mac address, use the command `sudo hciconfig hcio` 
-# on the device that will run the emulator
-G_DEVICE_MAC = "CHANGE_ME"
-
-# The device name will be what shows up on other devices during pairing
-G_DEVICE_NAME = "pi0kb"
-
-
-#
 # Define a bluez 5 profile object for our keyboard
-#
 class BTKbBluezProfile(dbus.service.Object):
     fd = -1
 
@@ -71,27 +60,22 @@ class BTKbBluezProfile(dbus.service.Object):
 # Create a bluetooth device to emulate a HID keyboard, 
 # advertise an SDP record using our bluez profile class.
 #
-class BTKbDevice():
-    DEVICE_NAME = G_DEVICE_NAME
-    DEVICE_MAC = G_DEVICE_MAC
-
-    if DEVICE_MAC == 'CHANGE_ME':
-        raise Exception("Mac address not configured! See /usr/lib/btkb/server/btkb_server.py")
-
-    # Service port, control - must match port configured in SDP record
-    P_CTRL = 17
-
-    # Service port, interrupt - must match port configured in SDP record#Interrrupt port
-    P_INTR = 19   
-
+class BTKbDevice():  
     PROFILE_DBUS_PATH = "/bluez/max/btkb_profile" # dbus path of the bluez profile we will create
-    #SDP_RECORD_PATH = sys.path[0] + "/sdp_record.xml" # file path of the sdp record to laod
-    SDP_RECORD_PATH = os.path.dirname(os.path.abspath(__file__)) + '/sdp_record.xml'
-    UUID = "00001124-0000-1000-8000-00805f9b34fb"
-             
+    SDP_RECORD_PATH = os.path.dirname(os.path.abspath(__file__)) + '/sdp_record.xml' # path to SDP record to load
  
-    def __init__(self):
+    def __init__(self, mac, name, uuid, dev_class = '0x002540', p_control = 17, p_interrupt = 19):
         print("[BTKB] Setting up BT device")
+
+        if mac == 'CHANGE_ME':
+            raise Exception("Mac address not configured! See config.ini.")
+
+        self.device_mac = mac
+        self.device_uuid = uuid
+        self.device_name = name
+        self.device_class = dev_class
+        self.p_ctrl = p_control
+        self.p_intr = p_interrupt
 
         self.init_bt_device()
         self.init_bluez_profile()
@@ -99,12 +83,12 @@ class BTKbDevice():
 
     # Configure the bluetooth hardware device
     def init_bt_device(self):
-        print("[BTKB] Configuring for name " + BTKbDevice.DEVICE_NAME)
+        print("[BTKB] Configuring for name " + self.device_name)
 
         # Set the device class to a keybord and set the name
         # Device class 0x002540 is a HID keyboard
-        os.system("hciconfig hcio class 0x002540")
-        os.system("hciconfig hcio name " + BTKbDevice.DEVICE_NAME)
+        os.system("hciconfig hcio class " + self.device_class)
+        os.system("hciconfig hcio name " + self.device_name)
 
         # Make the device discoverable
         os.system("hciconfig hcio piscan")
@@ -128,7 +112,7 @@ class BTKbDevice():
         bus = dbus.SystemBus()
         manager = dbus.Interface(bus.get_object("org.bluez", "/org/bluez"), "org.bluez.ProfileManager1")
         profile = BTKbBluezProfile(bus, BTKbDevice.PROFILE_DBUS_PATH)
-        manager.RegisterProfile(BTKbDevice.PROFILE_DBUS_PATH, BTKbDevice.UUID, opts)
+        manager.RegisterProfile(BTKbDevice.PROFILE_DBUS_PATH, self.device_uuid, opts)
 
         print("[BTKB] Profile registered")
 
@@ -156,8 +140,8 @@ class BTKbDevice():
         self.sinterrupt = BluetoothSocket(L2CAP)
 
         # Bind these sockets to a port - port zero to select next available
-        self.scontrol.bind((BTKbDevice.DEVICE_MAC, BTKbDevice.P_CTRL))
-        self.sinterrupt.bind((BTKbDevice.DEVICE_MAC, BTKbDevice.P_INTR))
+        self.scontrol.bind((self.device_mac, self.p_ctrl))
+        self.sinterrupt.bind((self.device_mac, self.p_intr))
 
         # Start listening on the server sockets
         self.scontrol.listen(1) # Limit of 1 connection
@@ -181,7 +165,7 @@ class BTKbDevice():
         self.sinterrupt.close()
 
     # Send a string to the bluetooth host machine
-    def send_string(self,message):
+    def send_string(self, message):
         self.cinterrupt.send(message)
 
 
@@ -189,9 +173,11 @@ class BTKbDevice():
 # Define a dbus service that emulates a bluetooth keyboard.
 class  BTKbService(dbus.service.Object):
 
-    def __init__(self, queue = None):
+    def __init__(self, queue = None, mac, name, uuid, auto_release=False, dev_class='0x002540', p_control = 17, p_interrupt = 19):
         print("[BTKB] Setting up service")
         self.queue = queue
+
+        self.auto_release = auto_release
 
         # Det up as a dbus service
         bus_name = dbus.service.BusName("org.max.btkb", bus=dbus.SystemBus())
@@ -199,7 +185,7 @@ class  BTKbService(dbus.service.Object):
         self.update_state("DISCONNECTED")
 
         # Create and setup our device
-        self.device = BTKbDevice()
+        self.device = BTKbDevice(mac, name, uuid, dev_class, p_control, p_interrupt)
 
         # Start listening for connections
         self.device.listen()
@@ -256,7 +242,10 @@ class  BTKbService(dbus.service.Object):
 
     # Send a list of bytes
     @dbus.service.method('org.max.btkb', in_signature='yayb')
-    def send_keys(self, modifier_byte, keys, release):
+    def send_keys(self, modifier_byte, keys, auto_release=None):
+        if auto_release is None:
+            auto_release = self.auto_release
+
         cmd_str=""
         cmd_str+=chr(0xA1)
         cmd_str+=chr(0x01)
@@ -286,6 +275,7 @@ class  BTKbService(dbus.service.Object):
             pass
 
 # Run the server individually, can be done without using start.py if you want
+# TODO: read from config
 if __name__ == "__main__":
     # Can only run as root
     if not os.geteuid() == 0:

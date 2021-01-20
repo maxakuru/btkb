@@ -7,6 +7,7 @@ from os import geteuid
 import sys
 import signal 
 from time import sleep
+import configparser
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -20,20 +21,64 @@ def start_server(queue):
     finally:
         return
 
+def read_config():
+    try:
+        config = configparser.ConfigParser()
+        config.read('config.ini')
+    except Exception as e:
+        print "Failed to read config.ini"
+        raise e
+
+    return {
+        'auto_release': config['Service'].getboolean('AutoRelease', fallback=False),
+        'device_mac': config['Service'].getstring('DeviceMac', fallback='CHANGE_ME'),
+        'device_uuid': config['Service'].getstring('DeviceUUID', fallback='00001124-0000-1000-8000-00805f9b34fb'),
+        'device_name': config['Service'].getstring('DeviceName', fallback='btkb'),
+        'device_class': config['Service'].getstring('DeviceClass', fallback='0x002540'),
+        'port_control': config['Service'].getint('PortControl', fallback=17),
+        'port_interrupt': config['Service'].getstring('PortInterrupt', fallback=19),
+
+        'fifo_path': config['FifoClient'].getstring('Path', fallback='/tmp/btkb.fifo'),
+        'fifo_owner_gid': config['FifoClient'].getint('OwnerGID', fallback=None),
+        'fifo_owner_uid': config['FifoClient'].getint('OwnerUID', fallback=None)
+    }
+
 if __name__ == "__main__":
     # Can only run as root
     if not geteuid() == 0:
         sys.exit("Only root can run this script")
 
-    # TODO: parse args to get auto_release
-    auto_release = True
+    c = read_config()
 
+    # Queue to pass data from FIFO to service
     queue = multiprocessing.Queue()
 
-    server = multiprocessing.Process(target=start_server, args=(queue,))
+    # Start service process
+    server = multiprocessing.Process(
+        target=start_server, 
+        args=(
+            queue, 
+            c['device_mac'], 
+            c['device_name'], 
+            c['device_uuid'], 
+            c['auto_release'], 
+            c['device_class'], 
+            c['port_control'], 
+            c['port_interrupt']
+        )
+    )
     server.start()
 
-    fifo = multiprocessing.Process(target=FifoClient, args=(queue, auto_release))
+    # Start FIFO client process
+    fifo = multiprocessing.Process(
+        target=FifoClient, 
+        args=(
+            queue,
+            c['fifo_path'],
+            c['fifo_owner_uid'],
+            c['fifo_owner_gid']
+        )
+    )
     fifo.start()
 
     def shutdown(sig_num, frame):

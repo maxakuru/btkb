@@ -1,0 +1,15 @@
+[Service]
+DeviceMac = CHANGE_ME                               # Required, the BT device mac
+DeviceName = btkb                                   # Shows up when searching for devices
+DeviceClass = 0x002540                              # HID class the device emulates
+DeviceUUID = 00001124-0000-1000-8000-00805f9b34fb   # UUID of device, you can leave this be
+AutoRelease = False                                 # Automatically release keys
+PortControl = 17                                    # Service port, control
+                                                    #   - must match port configured in SDP record
+PortInterrupt = 19                                  # Service port, interrupt 
+                                                    #   - must match port configured in SDP record#Interrrupt port
+
+[FifoClient]
+Path = /tmp/btkb.fifo                       # Where to make the fifo
+OwnerGID = 1000                             # Owner GID of the fifo, if None use whatever GID created the client
+OwnerUID = 1000                             # ^^^^  UID ...

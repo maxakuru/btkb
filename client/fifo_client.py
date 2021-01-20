@@ -10,29 +10,23 @@ from threading import Thread
 import select
 import subprocess
 
-# Intended uid and gid of owner of fifo.
-# Set both to to None to keep the owner as whichever
-# user initiates the client process.
-FIFO_OWNER_GID = 1000
-FIFO_OWNER_UID = 1000
-
 # Reads from a fifo using a thread, puts lines onto a queue
 class FifoReader():
-    def __init__(self):
-        if FIFO_OWNER_GID is not None:
-            os.setgid(FIFO_OWNER_GID)
+    def __init__(self, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
+        if owner_uid is not None:
+            os.setuid(owner_uid)
 
-        if FIFO_OWNER_UID is not None:
-            os.setuid(FIFO_OWNER_UID)
+        if owner_gid is not None:
+            os.setgid(owner_gid)
 
-        self.fifo_path = '/tmp/btkb.fifo'
+        self.fifo_path = fifo_path
         self.queue = mp.Queue()
         self.make_fifo()
         self.proc = None
 
     def make_fifo(self, retry=False):
         if not retry:
-            print("[BTKB:FIFO] Making fifo at path: ", self.fifo_path)
+            print "[BTKB:FIFO] Making fifo at path: "+ self.fifo_path
 
         try:
             os.mkfifo(self.fifo_path)
@@ -53,7 +47,7 @@ class FifoReader():
                 for data in fifo:
                     self.queue.put_nowait(data)
 
-        print("[BTKB:FIFO] after queue run loop")
+        print "[BTKB:FIFO] after queue run loop"
 
     def empty(self):
         return self.queue.empty()
@@ -74,7 +68,7 @@ class FifoReader():
 
      # Remove the fifo
     def remove_fifo(self):
-        print("[BTKB:FIFO] Removing FIFO")
+        print "[BTKB:FIFO] Removing FIFO"
         os.remove(self.fifo_path)
     
     def shutdown(self):
@@ -90,8 +84,8 @@ class FifoReader():
 # Class to process and send lines of actions from a fifo
 # to series of actions and keyboard HID bytestrings.
 class  FifoClient():
-    def __init__(self, queue, auto_release = False):
-        print("Setting up FifoClient")
+    def __init__(self, queue, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
+        print "[BTKB:FIFO] Setting up FifoClient"
         
         self.queue = queue
         # state of BTKB service, BT connection
@@ -105,7 +99,7 @@ class  FifoClient():
         self.control_sleep = 0.5
 
         # FIFO setup
-        self.fifo_reader = FifoReader()
+        self.fifo_reader = FifoReader(fifo_path, owner_uid, owner_gid)
         self.fifo_reader.run()
 
         self.bus = None
@@ -130,13 +124,14 @@ class  FifoClient():
         self.fifo_reader.shutdown()
 
     def handle_error(self, err):
-        print("[BTKB:FIFO] Handling error: ", err)
+        print "[BTKB:FIFO] Handling error: ", err
         if "Did not receive a reply" in err.message:
+            self.update_state()
             return
         raise err
 
     def init_dbus(self):
-        print("[BTKB:FIFO] Set up dbus interface")
+        print "[BTKB:FIFO] Set up dbus interface"
         self.bus = dbus.SystemBus()
         self.service = self.bus.get_object('org.max.btkb', "/org/max/btkb")
         self.interface = dbus.Interface(self.service, 'org.max.btkb')
@@ -275,10 +270,7 @@ class  FifoClient():
                     self.update_state(False)
         self.shutdown()
 
+# TODO: read from config
 if __name__ == "__main__":
-    # Can only run as root
-    # if not os.geteuid() == 0:
-    #     sys.exit("Only root can run this script")
-
     client = FifoClient()
     signal.signal(signal.SIGINT, client.shutdown)
