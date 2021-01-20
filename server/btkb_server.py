@@ -56,16 +56,20 @@ class BTKbBluezProfile(dbus.service.Object):
             self.fd = -1
 
 
-#
 # Create a bluetooth device to emulate a HID keyboard, 
 # advertise an SDP record using our bluez profile class.
-#
 class BTKbDevice():  
     PROFILE_DBUS_PATH = "/bluez/max/btkb_profile" # dbus path of the bluez profile we will create
     SDP_RECORD_PATH = os.path.dirname(os.path.abspath(__file__)) + '/sdp_record.xml' # path to SDP record to load
  
     def __init__(self, mac, name, uuid, dev_class = '0x002540', p_control = 17, p_interrupt = 19):
         print("[BTKB] Setting up BT device")
+        print("     mac: ", mac)
+        print("     name: ", name)
+        print("     uuid: ", uuid)
+        print("     class: ", dev_class)
+        print("     control port: ", p_control)
+        print("     interrupt port: ", p_interrupt)
 
         if mac == 'CHANGE_ME':
             raise Exception("Mac address not configured! See config.ini.")
@@ -83,7 +87,7 @@ class BTKbDevice():
 
     # Configure the bluetooth hardware device
     def init_bt_device(self):
-        print("[BTKB] Configuring for name " + self.device_name)
+        print("[BTKB] Configuring for name " + self.device_name + ", and class: " + self.device_class)
 
         # Set the device class to a keybord and set the name
         # Device class 0x002540 is a HID keyboard
@@ -134,16 +138,17 @@ class BTKbDevice():
     # Ideally this would be handled by the Bluez 5 profile,
     # but that didn't seem to work.
     def listen(self):
-        print("[BTKB] Waiting for connections")
+        print("[BTKB] Preparing to listen for connections")
 
         self.scontrol = BluetoothSocket(L2CAP)
         self.sinterrupt = BluetoothSocket(L2CAP)
 
         # Bind these sockets to a port - port zero to select next available
-        self.scontrol.bind((self.device_mac, self.p_ctrl))
-        self.sinterrupt.bind((self.device_mac, self.p_intr))
+        self.scontrol.bind((str(self.device_mac), int(self.p_ctrl)))
+        self.sinterrupt.bind((str(self.device_mac), int(self.p_intr)))
 
         # Start listening on the server sockets
+        print("[BTKB] Waiting for connections: "+ self.device_mac, self.p_ctrl, self.p_intr)
         self.scontrol.listen(1) # Limit of 1 connection
         self.sinterrupt.listen(1)
 
@@ -173,22 +178,30 @@ class BTKbDevice():
 # Define a dbus service that emulates a bluetooth keyboard.
 class  BTKbService(dbus.service.Object):
 
-    def __init__(self, queue = None, mac, name, uuid, auto_release=False, dev_class='0x002540', p_control = 17, p_interrupt = 19):
+    def __init__(self, out_queue, mac, name, uuid, auto_release=False, dev_class='0x002540', p_control = 17, p_interrupt = 19):
         print("[BTKB] Setting up service")
-        self.queue = queue
+        self.queue = out_queue
 
         self.auto_release = auto_release
 
         # Det up as a dbus service
         bus_name = dbus.service.BusName("org.max.btkb", bus=dbus.SystemBus())
         dbus.service.Object.__init__(self, bus_name, "/org/max/btkb")
+        print("trace 2 1")
+
         self.update_state("DISCONNECTED")
+        print("trace 2 2")
+
 
         # Create and setup our device
         self.device = BTKbDevice(mac, name, uuid, dev_class, p_control, p_interrupt)
+        print("trace 2 3")
+
 
         # Start listening for connections
         self.device.listen()
+        print("trace 2 4")
+
 
         # Mark state as active after connection received
         self.update_state("CONNECTED")

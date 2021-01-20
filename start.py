@@ -13,10 +13,10 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 
-def start_server(queue):
+def start_server(queue, mac, name, uuid, auto_rel, dev_class, p_ctrl, p_intr):
     try:
         DBusGMainLoop(set_as_default=True)
-        BTKbService(queue)
+        BTKbService(queue, mac, name, uuid, auto_rel, dev_class, p_ctrl, p_intr)
         Gtk.main()
     finally:
         return
@@ -24,24 +24,25 @@ def start_server(queue):
 def read_config():
     try:
         config = configparser.ConfigParser()
-        config.read('config.ini')
+        config.read('/usr/lib/btkb/config.ini')
+
+        return {
+            'auto_release': config['Service'].getboolean('AutoRelease', fallback=False),
+            'device_mac': config['Service'].get('DeviceMac', fallback='CHANGE_ME'),
+            'device_uuid': config['Service'].get('DeviceUUID', fallback='00001124-0000-1000-8000-00805f9b34fb'),
+            'device_name': config['Service'].get('DeviceName', fallback='btkb'),
+            'device_class': config['Service'].get('DeviceClass', fallback='0x002540'),
+            'port_control': config['Service'].getint('PortControl', fallback=17),
+            'port_interrupt': config['Service'].get('PortInterrupt', fallback=19),
+
+            'fifo_path': config['FifoClient'].get('Path', fallback='/tmp/btkb.fifo'),
+            'fifo_owner_gid': config['FifoClient'].getint('OwnerGID', fallback=None),
+            'fifo_owner_uid': config['FifoClient'].getint('OwnerUID', fallback=None)
+        }
+
     except Exception as e:
-        print "Failed to read config.ini"
+        print("Failed to read config.ini")
         raise e
-
-    return {
-        'auto_release': config['Service'].getboolean('AutoRelease', fallback=False),
-        'device_mac': config['Service'].getstring('DeviceMac', fallback='CHANGE_ME'),
-        'device_uuid': config['Service'].getstring('DeviceUUID', fallback='00001124-0000-1000-8000-00805f9b34fb'),
-        'device_name': config['Service'].getstring('DeviceName', fallback='btkb'),
-        'device_class': config['Service'].getstring('DeviceClass', fallback='0x002540'),
-        'port_control': config['Service'].getint('PortControl', fallback=17),
-        'port_interrupt': config['Service'].getstring('PortInterrupt', fallback=19),
-
-        'fifo_path': config['FifoClient'].getstring('Path', fallback='/tmp/btkb.fifo'),
-        'fifo_owner_gid': config['FifoClient'].getint('OwnerGID', fallback=None),
-        'fifo_owner_uid': config['FifoClient'].getint('OwnerUID', fallback=None)
-    }
 
 if __name__ == "__main__":
     # Can only run as root

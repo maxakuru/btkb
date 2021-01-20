@@ -23,7 +23,7 @@ sudo cp -TR ./client /usr/lib/btkb/client
 sudo cp -TR ./server /usr/lib/btkb/server
 sudo cp -TR ./start.py /usr/lib/btkb/start.py
 
-if [ ! -f /usr/lib/btkb/config.ini ]; then
+if [ -f /usr/lib/btkb/config.ini ]; then
     sudo cp -TR ./config.ini /usr/lib/btkb/config.ini
 else
     echo "Config already found in destination, ignoring."

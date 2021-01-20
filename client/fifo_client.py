@@ -1,3 +1,6 @@
+
+from __future__ import print_function
+
 from fifo_keymap import keymap
 from time import sleep
 import dbus
@@ -13,27 +16,31 @@ import subprocess
 # Reads from a fifo using a thread, puts lines onto a queue
 class FifoReader():
     def __init__(self, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
-        if owner_uid is not None:
-            os.setuid(owner_uid)
-
-        if owner_gid is not None:
-            os.setgid(owner_gid)
+        print("[BTKB:FIFO] FifoReader setting up with owner (uid, gid): ", (owner_uid, owner_gid))
 
         self.fifo_path = fifo_path
         self.queue = mp.Queue()
-        self.make_fifo()
+        self.make_fifo(owner_uid, owner_gid)
         self.proc = None
 
-    def make_fifo(self, retry=False):
+    def make_fifo(self, uid=None, gid=None, retry=False):
+        self.remove_fifo()
+
         if not retry:
-            print "[BTKB:FIFO] Making fifo at path: "+ self.fifo_path
+            print("[BTKB:FIFO] Making fifo at path: " + self.fifo_path)
+            if uid is not None:
+                print("[BTKB:FIFO] Setting UID: " + str(uid))
+                os.setuid(uid)
+            if gid is not None:
+                print("[BTKB:FIFO] Setting GID: " + str(gid))
+                os.setgid(gid)
 
         try:
             os.mkfifo(self.fifo_path)
         except OSError, e:
             if not retry and e.errno == 17:
                 self.remove_fifo()
-                return self.make_fifo(True)
+                return self.make_fifo(uid, gid, True)
             raise Exception("[BTKB:FIFO] Could not make fifo", e)
     
     def run(self):
@@ -47,7 +54,7 @@ class FifoReader():
                 for data in fifo:
                     self.queue.put_nowait(data)
 
-        print "[BTKB:FIFO] after queue run loop"
+        print("[BTKB:FIFO] after queue run loop")
 
     def empty(self):
         return self.queue.empty()
@@ -68,8 +75,12 @@ class FifoReader():
 
      # Remove the fifo
     def remove_fifo(self):
-        print "[BTKB:FIFO] Removing FIFO"
-        os.remove(self.fifo_path)
+        print("[BTKB:FIFO] Removing FIFO")
+        try:
+            os.remove(self.fifo_path)
+        except OSError as e:
+            if e.errno != 2:
+                raise e
     
     def shutdown(self):
         if self.proc is not None:
@@ -84,10 +95,10 @@ class FifoReader():
 # Class to process and send lines of actions from a fifo
 # to series of actions and keyboard HID bytestrings.
 class  FifoClient():
-    def __init__(self, queue, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
-        print "[BTKB:FIFO] Setting up FifoClient"
+    def __init__(self, in_queue, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
+        print("[BTKB:FIFO] Setting up FifoClient")
         
-        self.queue = queue
+        self.queue = in_queue
         # state of BTKB service, BT connection
         # PENDING - before dbus is ready
         # DISCONNECTED - dbus is ready, but before BT device is connected or after it has disconnected
@@ -124,14 +135,14 @@ class  FifoClient():
         self.fifo_reader.shutdown()
 
     def handle_error(self, err):
-        print "[BTKB:FIFO] Handling error: ", err
+        print("[BTKB:FIFO] Handling error: ", err)
         if "Did not receive a reply" in err.message:
             self.update_state()
             return
         raise err
 
     def init_dbus(self):
-        print "[BTKB:FIFO] Set up dbus interface"
+        print("[BTKB:FIFO] Set up dbus interface")
         self.bus = dbus.SystemBus()
         self.service = self.bus.get_object('org.max.btkb', "/org/max/btkb")
         self.interface = dbus.Interface(self.service, 'org.max.btkb')
