@@ -11,19 +11,18 @@ I'm currently using this on a Raspberry Pi Zero W to dispatch commands received 
 ### Setup
 1. Get the repo
 ```sh
-git clone 
+git clone git@github.com:maxakuru/btkb.git
 ```
 
-2. Configure `G_DEVICE_MAC` and `G_DEVICE_NAME` in `/server/btkb_server.py`
-
-3. Configure `FIFO_OWNER_GID` and `FIFO_OWNER_UID` in `/server/fifo_client.py`
-These will become the FIFO's owner uid and gid, set to `None` to keep as root.
-
-
-4. Enable bluetooth if needed
+2. Enable bluetooth if needed
 ```sh
 sudo hciconfig hcio up
 ```
+
+3. Copy `config.ini.example` and rename to `config.ini`
+
+4. Configure `config.ini` how you like, at least the device mac address is needed
+>> Note: To get the mac address, use `sudo hciconfig hci0 -a` and look for `BD Address`.
 
 5. Run the setup script (or set it up however you want)
 ```sh
@@ -34,16 +33,16 @@ sudo hciconfig hcio up
 ```sh
 sudo /usr/bin/bluetoothctl
 ```
-Then
+>> Then
 ```sh
 agent on
 default-agent
 pairable on
 discoverable on
 ```
-And leave this terminal running.
+>> And leave this terminal running.
 
-Find the emulator `G_DEVICE_NAME` in the bluetooth device list, pair, accept
+Find your device in the bluetooth device list, pair, accept
 Back in the terminal, accept the pairing code with `yes`.
 
 7. Send keystrokes via fifo
@@ -71,8 +70,15 @@ Left ctrl + esc, then release keys and unhold "ctrl" modifier:
 ```sh
 btkb MOD_LEFTCTRL KEY_ESC ACT_RELEASE MOD_RESET
 ```
-Note: this works the same as the `KEY_HOMESCREEN` event on Firestick (and maybe other Android TV devices)
+>> Note: this works the same as the `KEY_HOMESCREEN` event on Firestick (and maybe other Android TV devices)
 
+
+#### Alternative use
+Write directly to the fifo, if you want:
+```sh
+echo "KEY_ENTER ACT_RELEASE" >> /tmp/btkb.fifo
+```
+>> Note: This requires using the same user as configured in `config.ini`
 
 #### Credits
 Not sure who this is, but [very helpful!](http://yetanotherpointlesstechblog.blogspot.com/2016/04/emulating-bluetooth-keyboard-with.html)
