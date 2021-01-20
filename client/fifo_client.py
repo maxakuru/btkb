@@ -8,21 +8,33 @@ import Queue
 import multiprocessing as mp
 from threading import Thread
 import select
+import subprocess
+
+# Intended uid and gid of owner of fifo.
+# Set both to to None to keep the owner as whichever
+# user initiates the client process.
+FIFO_OWNER_GID = 1000
+FIFO_OWNER_UID = 1000
 
 # Reads from a fifo using a thread, puts lines onto a queue
 class FifoReader():
     def __init__(self):
+        if FIFO_OWNER_GID is not None:
+            os.setgid(FIFO_OWNER_GID)
+
+        if FIFO_OWNER_UID is not None:
+            os.setuid(FIFO_OWNER_UID)
+
         self.fifo_path = '/tmp/btkb.fifo'
         self.queue = mp.Queue()
         self.make_fifo()
-        self.thread = Thread(target=self.run)
-        self.thread.start()
+        self.proc = None
 
     def make_fifo(self, retry=False):
         if not retry:
             print("[BTKB:FIFO] Making fifo at path: ", self.fifo_path)
 
-        try :
+        try:
             os.mkfifo(self.fifo_path)
         except OSError, e:
             if not retry and e.errno == 17:
@@ -30,23 +42,32 @@ class FifoReader():
                 return self.make_fifo(True)
             raise Exception("[BTKB:FIFO] Could not make fifo", e)
     
-    # Repeatedly read from fifo
     def run(self):
-        with open(self.fifo_path, 'r') as fifo:
-            while True:
-                select.select([fifo],[],[fifo])
-                line = fifo.read()
-                if line == '':
-                    continue
-                self.queue.put_nowait(line)
+        self.proc = mp.Process(target=self.read_loop)
+        self.proc.start()
+
+    # Repeatedly read from fifo
+    def read_loop(self):
+        while True:
+            with open(self.fifo_path, 'r') as fifo:
+                for data in fifo:
+                    self.queue.put_nowait(data)
+
         print("[BTKB:FIFO] after queue run loop")
 
     def empty(self):
         return self.queue.empty()
 
-    def get_line(self, timeout=0):
+    # Get a line from the fifo
+    # If timeout elapses with no data, signal to update state
+    def get_line(self, timeout=100):
         # print("[BTKB:FIFO] get_line() ", timeout)
         # TODO: notify of needing state update
+        try:
+            return self.queue.get(True, timeout), False
+        except Queue.Empty:
+            return None, True
+
         if self.queue.empty():
             return None, False
         return self.queue.get(block=False, timeout=timeout), False
@@ -57,8 +78,9 @@ class FifoReader():
         os.remove(self.fifo_path)
     
     def shutdown(self):
-        self.thread.terminate()
-        self.thread.join()
+        if self.proc is not None:
+            self.proc.terminate()
+            self.proc.join()
         self.remove_fifo()
 
     def flush(self):
@@ -72,13 +94,19 @@ class  FifoClient():
         print("Setting up FifoClient")
         
         self.queue = queue
-        self.state = 'PENDING' # state of BTKB service, BT connection
+        # state of BTKB service, BT connection
+        # PENDING - before dbus is ready
+        # DISCONNECTED - dbus is ready, but before BT device is connected or after it has disconnected
+        # CONNECTED - device connected, ready to read from fifo and push commands to device
+        # SHUTDOWN - received message to shutdown, exit loop
+        self.state = 'PENDING'
 
         # TODO: Allow sleep time to be modified by messages on FIFO
         self.control_sleep = 0.5
 
         # FIFO setup
         self.fifo_reader = FifoReader()
+        self.fifo_reader.run()
 
         self.bus = None
         self.service = None
@@ -206,30 +234,34 @@ class  FifoClient():
     # Read from the queue, looking for an update status message
     def update_state(self, block=False, timeout=0):
         #print("[BTKB:FIFO] update_state: ", block, self.state)
-        if not self.queue.empty():
+        try:
             msg = self.queue.get(block=block, timeout=timeout)
-            if msg is not None:
-                if msg['topic'] == 'update_state':
-                    self.state = msg['value']
-                if msg['topic'] == 'shutdown':
-                    self.state = 'SHUTDOWN'
+            if msg is None:
+                return
+            if msg['topic'] == 'update_state':
+                self.state = msg['value']
+            if msg['topic'] == 'shutdown':
+                self.state = 'SHUTDOWN'
+        except Queue.Empty:
+            pass
 
     # Kick off main loop
     def run(self):
-        # initial setup loop, waits for PENDING to become ACTIVE
+        # Initial setup loop, waits for PENDING to become ACTIVE
+        # This is done with no sleep since it should be quick
         while self.state == 'PENDING':
             self.update_state(block=True, timeout=0.1)
-            if self.state == 'DISCONNECTED':
-                # DBus is ready
-                self.init_dbus()
+            if self.state != 'PENDING':
                 break
-            sleep(0.1)
+
+        # dbus service is ready
+        self.init_dbus()
 
         while self.state != 'SHUTDOWN':
             # Now wait until a connection is made
             while self.state == 'DISCONNECTED':
                 self.update_state(block=True, timeout=0.5)
-                sleep(self.control_sleep)                
+                sleep(self.control_sleep)            
 
             # Reset the fifo in case a bunch of command were queued up,
             # don't want them all to replay once the connection is made
@@ -240,7 +272,7 @@ class  FifoClient():
                 if line is not None:
                     self.send_line(line)
                 if update:
-                    self.update_state()
+                    self.update_state(False)
         self.shutdown()
 
 if __name__ == "__main__":

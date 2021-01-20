@@ -16,17 +16,21 @@ git clone
 
 2. Configure `G_DEVICE_MAC` and `G_DEVICE_NAME` in `/server/btkb_server.py`
 
-3. Enable bluetooth if needed
+3. Configure `FIFO_OWNER_GID` and `FIFO_OWNER_UID` in `/server/fifo_client.py`
+These will become the FIFO's owner uid and gid, set to `None` to keep as root.
+
+
+4. Enable bluetooth if needed
 ```sh
 sudo hciconfig hcio up
 ```
 
-4. Run the setup script (or set it up however you want)
+5. Run the setup script (or set it up however you want)
 ```sh
 /bin/bash setup.sh
 ```
 
-5. Pair your device
+6. Pair your device
 ```sh
 sudo /usr/bin/bluetoothctl
 ```
@@ -42,30 +46,30 @@ And leave this terminal running.
 Find the emulator `G_DEVICE_NAME` in the bluetooth device list, pair, accept
 Back in the terminal, accept the pairing code with `yes`.
 
-6. Send keystrokes via fifo
+7. Send keystrokes via fifo
 A convenience script is installed with the setup script, but really it just pushes whatever the arguments you provide into a fifo.
 This fifo is then read, line by line, by the FifoClient, converted into HID bytestrings and sent to the connected device.
-The fifo is owned by root by default, so the script should be run with `sudo`.
+The fifo is owned by uid/gid 1000, but depending on step 2, you may need `sudo`.
 
 #### Sample commands
 Press down "enter":
 ```sh
-sudo btkb KEY_ENTER
+btkb KEY_ENTER
 ```
 
 Press down "enter", release all keys:
 ```sh
-sudo btkb KEY_ENTER ACT_RELEASE
+btkb KEY_ENTER ACT_RELEASE
 ```
 
 Press down "enter", hold it for a second, release:
 ```sh
-sudo btkb KEY_ENTER ACT_HOLD_1 ACT_RELEASE
+btkb KEY_ENTER ACT_HOLD_1 ACT_RELEASE
 ```
 
 Left ctrl + esc, then release keys and unhold "ctrl" modifier:
 ```sh
-sudo btkb MOD_LEFTCTRL KEY_ESC ACT_RELEASE MOD_RESET
+btkb MOD_LEFTCTRL KEY_ESC ACT_RELEASE MOD_RESET
 ```
 Note: this works the same as the `KEY_HOMESCREEN` event on Firestick (and maybe other Android TV devices)
 
