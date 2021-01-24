@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ ! -f config.ini ]; then
+if [ ! -f config.ini ] && [ ! -f /usr/lib/btkb/config.ini ]; then
     echo "config.ini does not exist! Copy, rename, and configure config.ini.example"
     exit 1
 fi

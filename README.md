@@ -21,8 +21,8 @@ sudo hciconfig hcio up
 
 3. Copy `config.ini.example` and rename to `config.ini`
 
-4. Configure `config.ini` how you like, at least the device mac address is needed
->> Note: To get the mac address, use `sudo hciconfig hci0 -a` and look for `BD Address`.
+4. Configure `config.ini` how you like, at least the device address is needed
+>> Note: To get the bluetooth device address, use `sudo hciconfig hci0 -a` and look for `BD Address`.
 
 5. Run the setup script (or set it up however you want)
 ```sh

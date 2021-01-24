@@ -13,10 +13,10 @@ import gi
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk
 
-def start_server(queue, mac, name, uuid, auto_rel, dev_class, p_ctrl, p_intr):
+def start_server(queue, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr):
     try:
         DBusGMainLoop(set_as_default=True)
-        BTKbService(queue, mac, name, uuid, auto_rel, dev_class, p_ctrl, p_intr)
+        BTKbService(queue, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr)
         Gtk.main()
     finally:
         return
@@ -28,7 +28,7 @@ def read_config():
 
         return {
             'auto_release': config['Service'].getboolean('AutoRelease', fallback=False),
-            'device_mac': config['Service'].get('DeviceMac', fallback='CHANGE_ME'),
+            'device_addr': config['Service'].get('DeviceBDAddr', fallback='CHANGE_ME'),
             'device_uuid': config['Service'].get('DeviceUUID', fallback='00001124-0000-1000-8000-00805f9b34fb'),
             'device_name': config['Service'].get('DeviceName', fallback='btkb'),
             'device_class': config['Service'].get('DeviceClass', fallback='0x002540'),
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         target=start_server, 
         args=(
             queue, 
-            c['device_mac'], 
+            c['device_addr'], 
             c['device_name'], 
             c['device_uuid'], 
             c['auto_release'], 

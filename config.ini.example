@@ -1,6 +1,6 @@
 [Service]
- # Required, the BT device mac
-DeviceMac = CHANGE_ME
+ # Required, the BT device address
+DeviceBDAddr = CHANGE_ME
 # Shows up when searching for devices
 DeviceName = btkb
 # HID class the device emulates
