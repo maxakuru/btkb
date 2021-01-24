@@ -6,33 +6,36 @@ from time import sleep
 import dbus
 import signal
 import os
-import atexit
 import Queue
 import multiprocessing as mp
 from threading import Thread
 import select
 import subprocess
 
+
 # Reads from a fifo using a thread, puts lines onto a queue
 class FifoReader():
-    def __init__(self, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
-        print("[BTKB:FIFO] FifoReader setting up with owner (uid, gid): ", (owner_uid, owner_gid))
-
+    def __init__(self, shutdown_flag, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
+        print("[BTKB:FIFOREADER] FifoReader setting up with owner (uid, gid): ", (owner_uid, owner_gid))
+        
+        self.shutdown_flag = shutdown_flag
         self.fifo_path = fifo_path
         self.queue = mp.Queue()
         self.make_fifo(owner_uid, owner_gid)
         self.proc = None
 
+        signal.signal(signal.SIGINT, self.shutdown)
+
     def make_fifo(self, uid=None, gid=None, retry=False):
         self.remove_fifo()
 
         if not retry:
-            print("[BTKB:FIFO] Making fifo at path: " + self.fifo_path)
+            print("[BTKB:FIFOREADER] Making fifo at path: " + self.fifo_path)
             if uid is not None:
-                print("[BTKB:FIFO] Setting UID: " + str(uid))
+                print("[BTKB:FIFOREADER] Setting UID: " + str(uid))
                 os.setuid(uid)
             if gid is not None:
-                print("[BTKB:FIFO] Setting GID: " + str(gid))
+                print("[BTKB:FIFOREADER] Setting GID: " + str(gid))
                 os.setgid(gid)
 
         try:
@@ -41,7 +44,7 @@ class FifoReader():
             if not retry and e.errno == 17:
                 self.remove_fifo()
                 return self.make_fifo(uid, gid, True)
-            raise Exception("[BTKB:FIFO] Could not make fifo", e)
+            raise Exception("[BTKB:FIFOREADER] Could not make fifo", e)
     
     def run(self):
         self.proc = mp.Process(target=self.read_loop)
@@ -49,12 +52,15 @@ class FifoReader():
 
     # Repeatedly read from fifo
     def read_loop(self):
-        while True:
-            with open(self.fifo_path, 'r') as fifo:
-                for data in fifo:
-                    self.queue.put_nowait(data)
+        try:
+            while not self.shutdown_flag.is_set():
+                with open(self.fifo_path, 'r') as fifo:
+                    for data in fifo:
+                        self.queue.put_nowait(data)
+        finally:
+            return
 
-        print("[BTKB:FIFO] after queue run loop")
+        print("[BTKB:FIFOREADER] after queue run loop")
 
     def empty(self):
         return self.queue.empty()
@@ -75,17 +81,19 @@ class FifoReader():
 
      # Remove the fifo
     def remove_fifo(self):
-        print("[BTKB:FIFO] Removing FIFO")
+        print("[BTKB:FIFOREADER] Removing FIFO")
         try:
             os.remove(self.fifo_path)
         except OSError as e:
             if e.errno != 2:
                 raise e
     
-    def shutdown(self):
+    def shutdown(self, sig_num=None, frame=None):
+        print("[BTKB:FIFOREADER] shutdown")
         if self.proc is not None:
             self.proc.terminate()
             self.proc.join()
+            self.proc = None
         self.remove_fifo()
 
     def flush(self):
@@ -95,10 +103,12 @@ class FifoReader():
 # Class to process and send lines of actions from a fifo
 # to series of actions and keyboard HID bytestrings.
 class  FifoClient():
-    def __init__(self, in_queue, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
+    def __init__(self, in_queue, shutdown_flag, fifo_path='/tmp/btkb.fifo', owner_uid=None, owner_gid=None):
         print("[BTKB:FIFO] Setting up FifoClient")
         
         self.queue = in_queue
+        self.shutdown_flag = shutdown_flag
+
         # state of BTKB service, BT connection
         # PENDING - before dbus is ready
         # DISCONNECTED - dbus is ready, but before BT device is connected or after it has disconnected
@@ -110,7 +120,7 @@ class  FifoClient():
         self.control_sleep = 0.5
 
         # FIFO setup
-        self.fifo_reader = FifoReader(fifo_path, owner_uid, owner_gid)
+        self.fifo_reader = FifoReader(shutdown_flag, fifo_path, owner_uid, owner_gid)
         self.fifo_reader.run()
 
         self.bus = None
@@ -129,9 +139,12 @@ class  FifoClient():
         }
         self.modifier_byte = 0x00
 
+        signal.signal(signal.SIGINT, self.shutdown)
+
         self.run()
 
-    def shutdown(self):
+    def shutdown(self, sig_num=None, frame=None):
+        print("[BTKB:FIFO] shutdown")
         self.fifo_reader.shutdown()
 
     def handle_error(self, err):
@@ -240,14 +253,20 @@ class  FifoClient():
     # Read from the queue, looking for an update status message
     def update_state(self, block=False, timeout=0):
         #print("[BTKB:FIFO] update_state: ", block, self.state)
+        if self.shutdown_flag.is_set():
+            self.state = 'SHUTDOWN'
+            return
+
         try:
             msg = self.queue.get(block=block, timeout=timeout)
+            if self.shutdown_flag.is_set():
+                self.state = 'SHUTDOWN'
+                return
+
             if msg is None:
                 return
             if msg['topic'] == 'update_state':
                 self.state = msg['value']
-            if msg['topic'] == 'shutdown':
-                self.state = 'SHUTDOWN'
         except Queue.Empty:
             pass
 
@@ -261,9 +280,10 @@ class  FifoClient():
                 break
 
         # dbus service is ready
-        self.init_dbus()
+        if not self.shutdown_flag.is_set():
+            self.init_dbus()
 
-        while self.state != 'SHUTDOWN':
+        while self.state != 'SHUTDOWN' and not self.shutdown_flag.is_set():
             # Now wait until a connection is made
             while self.state == 'DISCONNECTED':
                 self.update_state(block=True, timeout=0.5)
@@ -279,7 +299,6 @@ class  FifoClient():
                     self.send_line(line)
                 if update:
                     self.update_state(False)
-        self.shutdown()
 
 # TODO: read from config
 if __name__ == "__main__":

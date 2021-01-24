@@ -100,7 +100,7 @@ class BTKbDevice():
 
     # Set up a bluez profile to advertise device capabilities from a loaded service record.
     def init_bluez_profile(self):
-        print("[BTKB] Configuring Bluez Profile")
+        print("[BTKB] Configuring Bluez profile")
 
         #setup profile options
         service_record = self.read_sdp_service_record()
@@ -138,7 +138,7 @@ class BTKbDevice():
     # Ideally this would be handled by the Bluez 5 profile,
     # but that didn't seem to work.
     def listen(self):
-        print("[BTKB] Preparing to listen for connections")
+        print("[BTKB] listen()")
 
         self.scontrol = BluetoothSocket(L2CAP)
         self.sinterrupt = BluetoothSocket(L2CAP)
@@ -159,6 +159,8 @@ class BTKbDevice():
         print ("[BTKB] Got a connection on the interrupt channel from " + cinfo[0])
 
     def reconnect(self):
+        print("[BTKB] reconnect()")
+
         self.ccontrol, cinfo = self.scontrol.accept()
         print ("[BTKB] Reconnected to control channel " + cinfo[0])
 
@@ -166,6 +168,8 @@ class BTKbDevice():
         print ("[BTKB] Reconnected to interrupt channel " + cinfo[0])
 
     def close(self):
+        print("[BTKB] close()")
+
         self.scontrol.close()
         self.sinterrupt.close()
 
@@ -178,7 +182,7 @@ class BTKbDevice():
 # Define a dbus service that emulates a bluetooth keyboard.
 class  BTKbService(dbus.service.Object):
 
-    def __init__(self, out_queue, bd_addr, name, uuid, auto_release=False, dev_class='0x002540', p_control = 17, p_interrupt = 19):
+    def __init__(self, out_queue, shutdown_flag, bd_addr, name, uuid, auto_release=False, dev_class='0x002540', p_control = 17, p_interrupt = 19):
         print("[BTKB] Setting up service")
         self.queue = out_queue
 
@@ -218,7 +222,7 @@ class  BTKbService(dbus.service.Object):
             self.device.reconnect()
             self.update_state("CONNECTED")
         else:
-            self.update_state('SHUTDOWN')
+            self.update_state("SHUTDOWN")
             raise err
 
     @dbus.service.method('org.freedesktop.DBus.Introspectable', out_signature='s')
@@ -230,6 +234,7 @@ class  BTKbService(dbus.service.Object):
     # Send a string, probably a string of bytes
     @dbus.service.method('org.max.btkb', in_signature='ay')
     def send_bytes(self, b):
+        # print("[BTKB] send_bytes() ", b)
         try:
             bs = ''.join([chr(v) for v in b])
             self.device.send_string(bs)
@@ -285,7 +290,7 @@ if __name__ == "__main__":
     if not os.geteuid() == 0:
         sys.exit("[BTKB] Only root can run this script")
 
-    DBusGMainLoop(set_as_default=True)
+    # DBusGMainLoop(set_as_default=True)
     service = BTKbService()
 
     try:

@@ -1,7 +1,6 @@
 # Script to start both server and FifoClient
 from server.btkb_server import BTKbService
 from client.fifo_client import FifoClient
-from dbus.mainloop.glib import DBusGMainLoop
 import multiprocessing
 from os import geteuid
 import sys
@@ -9,17 +8,22 @@ import signal
 from time import sleep
 import configparser
 
-import gi
-gi.require_version('Gtk', '3.0')
-from gi.repository import Gtk
+# import gi
+# gi.require_version('Gtk', '3.0')
+# from gi.repository import Gtk
 
-def start_server(queue, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr):
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+
+
+def start_server(queue, shutdown_flag, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr):
     try:
         DBusGMainLoop(set_as_default=True)
-        BTKbService(queue, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr)
-        Gtk.main()
-    finally:
-        return
+        loop = GLib.MainLoop()
+        BTKbService(queue, shutdown_flag, bd_addr, name, uuid, auto_rel, dev_class, p_ctrl, p_intr)
+        loop.run()
+    except:
+        shutdown_flag.set()
 
 def read_config():
     try:
@@ -51,6 +55,8 @@ if __name__ == "__main__":
 
     c = read_config()
 
+    shutdown_flag = multiprocessing.Event()
+
     # Queue to pass data from FIFO to service
     queue = multiprocessing.Queue()
 
@@ -59,6 +65,7 @@ if __name__ == "__main__":
         target=start_server, 
         args=(
             queue, 
+            shutdown_flag,
             c['device_addr'], 
             c['device_name'], 
             c['device_uuid'], 
@@ -75,6 +82,7 @@ if __name__ == "__main__":
         target=FifoClient, 
         args=(
             queue,
+            shutdown_flag,
             c['fifo_path'],
             c['fifo_owner_uid'],
             c['fifo_owner_gid']
@@ -83,12 +91,10 @@ if __name__ == "__main__":
     fifo.start()
 
     def shutdown(sig_num, frame):
-        server.terminate()
-        fifo.terminate()
+        print('[BTKB:start] shut down')
+        shutdown_flag.set()
 
         server.join()
         fifo.join()
 
     signal.signal(signal.SIGINT, shutdown)
-
-    # fifo = FifoClient(auto_release)
