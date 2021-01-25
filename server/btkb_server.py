@@ -234,7 +234,7 @@ class  BTKbService(dbus.service.Object):
     # Send a string, probably a string of bytes
     @dbus.service.method('org.max.btkb', in_signature='ay')
     def send_bytes(self, b):
-        # print("[BTKB] send_bytes() ", b)
+        print("[BTKB] send_bytes() ", b)
         try:
             bs = ''.join([chr(v) for v in b])
             self.device.send_string(bs)
